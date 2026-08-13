@@ -1,4 +1,4 @@
-# @akaanakbaik/libsignal
+# @kelvdra/libsignal
 
 **Modernized, security-hardened fork of the Signal Protocol for Node.js**
 
@@ -14,7 +14,7 @@
 
 ## Overview
 
-`@akaanakbaik/libsignal` is a pure JavaScript implementation of the **Signal Protocol** — the cryptographic protocol that powers WhatsApp, Signal Messenger, and other end-to-end encrypted messaging applications.
+`@kelvdra/libsignal` is a pure JavaScript implementation of the **Signal Protocol** — the cryptographic protocol that powers WhatsApp, Signal Messenger, and other end-to-end encrypted messaging applications.
 
 This is a **modernized fork** of [WhiskeySockets/libsignal-node](https://github.com/WhiskeySockets/libsignal-node). It provides:
 
@@ -47,7 +47,7 @@ This fork addresses all these issues while maintaining **100% backward compatibi
 ## Installation
 
 ```bash
-npm install @akaanakbaik/libsignal
+npm install @kelvdra/libsignal
 ```
 
 ## Usage
@@ -55,17 +55,17 @@ npm install @akaanakbaik/libsignal
 ### Basic Usage
 
 ```javascript
-const libsignal = require('@akaanakbaik/libsignal');
+const libsignal = require('@kelvdra/libsignal');
 
 // OR (ESM / TypeScript)
-import * as libsignal from '@akaanakbaik/libsignal';
+import * as libsignal from '@kelvdra/libsignal';
 ```
 
 ### With Baileys
 
 ```javascript
 // Works with @kelvdra/baileys and WhiskeySockets/Baileys
-const libsignal = require('@akaanakbaik/libsignal');
+const libsignal = require('@kelvdra/libsignal');
 
 // Or configure your Baileys instance to use this package
 ```
@@ -73,7 +73,7 @@ const libsignal = require('@akaanakbaik/libsignal');
 ### Key Generation
 
 ```javascript
-const { keyhelper, curve, ProtocolAddress } = require('@akaanakbaik/libsignal');
+const { keyhelper, curve, ProtocolAddress } = require('@kelvdra/libsignal');
 
 // Generate identity key pair
 const identityKeyPair = keyhelper.generateIdentityKeyPair();
@@ -91,7 +91,7 @@ const preKey = keyhelper.generatePreKey(1);
 ### Session Establishment
 
 ```javascript
-const { SessionBuilder, SessionCipher, ProtocolAddress } = require('@akaanakbaik/libsignal');
+const { SessionBuilder, SessionCipher, ProtocolAddress } = require('@kelvdra/libsignal');
 
 // Create address for remote device
 const remoteAddr = new ProtocolAddress('user@example.com', 1);
@@ -164,7 +164,7 @@ For full API documentation, see [API_REFERENCE.md](API_REFERENCE.md).
 ```json
 {
   "dependencies": {
-    "libsignal": "npm:@akaanakbaik/libsignal@^1.0.0"
+    "libsignal": "npm:@kelvdra/libsignal@^1.0.0"
   }
 }
 ```
@@ -184,7 +184,7 @@ For full API documentation, see [API_REFERENCE.md](API_REFERENCE.md).
 const libsignal = require('libsignal');
 
 // New
-const libsignal = require('@akaanakbaik/libsignal');
+const libsignal = require('@kelvdra/libsignal');
 ```
 
 **No other code changes required.** All APIs, classes, methods, parameters, return values, and error types are identical.
@@ -253,7 +253,7 @@ node --test test/benchmark.test.js
 
 ```bash
 # Clone
-git clone https://github.com/akaanakbaik/libsignal.git
+git clone https://github.com/kelvdra/libsignal.git
 cd libsignal
 
 # Install
