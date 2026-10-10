@@ -1,17 +1,24 @@
 # .github/workflows/publish.yml
 #
-# Publish @kelvdra/libsignal ke npm setiap push tag "v*".
+# Publish @kelvdra/libsignal ke npm lewat Trusted Publishing (OIDC),
+# tanpa NPM_TOKEN dan tanpa OTP. Jalan setiap push tag "v*.*.*".
 #   v1.0.0        -> npm 1.0.0        (dist-tag: latest)
 #   v1.0.1-rc.1   -> npm 1.0.1-rc.1   (dist-tag: latest, sesuai permintaan)
 #
 # Prasyarat (sekali saja):
-#   1. Repo Settings > Secrets and variables > Actions > New secret: NPM_TOKEN
-#      (npm granular access token, permission "Read and write" hanya untuk
-#      package @kelvdra/libsignal, aktifkan bypass 2FA untuk automation).
-#   2. (Opsional, disarankan) Settings > Environments > "npm-production" >
+#   1. Package @kelvdra/libsignal sudah pernah dipublish ke npm
+#      (Trusted Publisher hanya bisa diatur untuk package yang sudah ada).
+#   2. npmjs.com > package > Settings > Trusted Publisher > GitHub Actions:
+#        Organization/user : <owner repo GitHub>
+#        Repository        : libsignal
+#        Workflow filename : publish.yml
+#        Environment       : npm-production
+#      Semua isian harus persis sama dengan di GitHub (huruf besar/kecil
+#      juga dihitung).
+#   3. GitHub repo harus publik dan "repository.url" di package.json harus
+#      mengarah ke repo ini.
+#   4. (Disarankan) GitHub > Settings > Environments > "npm-production" >
 #      Required reviewers, supaya setiap publish perlu approve manual.
-#   3. Field "repository.url" di package.json harus mengarah ke repo GitHub
-#      ini, kalau tidak provenance akan gagal.
 #
 # Cara rilis:
 #   npm version 1.0.1-rc.1 --no-git-tag-version   # ubah package.json
@@ -112,17 +119,17 @@ jobs:
         run: npm pack --dry-run
 
   # ---------------------------------------------------------------------------
-  # 2. Publish: hanya jalan kalau semua verify lulus.
+  # 2. Publish via Trusted Publishing (OIDC). Hanya jalan kalau verify lulus.
   # ---------------------------------------------------------------------------
   publish:
     name: Publish to npm
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: npm-production
+    environment: npm-production # harus sama dengan isian di Trusted Publisher npm
     permissions:
       contents: write # buat GitHub Release
-      id-token: write # npm provenance (OIDC)
+      id-token: write # wajib untuk Trusted Publishing (OIDC)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -134,6 +141,12 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+
+      # Trusted Publishing butuh npm >= 11.5.1
+      - name: Update npm
+        run: |
+          npm install -g npm@latest
+          npm --version
 
       - name: Read package info
         id: pkg
@@ -154,12 +167,11 @@ jobs:
             echo "published=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Tanpa token: npm otomatis memakai OIDC. Provenance dibuat otomatis.
       # --tag latest dipasang eksplisit supaya versi rc pun jadi "latest".
       - name: Publish (dist-tag latest)
         if: steps.exists.outputs.published == 'false'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --tag latest --access public --provenance
+        run: npm publish --tag latest --access public
 
       - name: Show result
         if: steps.exists.outputs.published == 'false'
