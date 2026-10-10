@@ -1,0 +1,188 @@
+# .github/workflows/publish.yml
+#
+# Publish @kelvdra/libsignal ke npm setiap push tag "v*".
+#   v1.0.0        -> npm 1.0.0        (dist-tag: latest)
+#   v1.0.1-rc.1   -> npm 1.0.1-rc.1   (dist-tag: latest, sesuai permintaan)
+#
+# Prasyarat (sekali saja):
+#   1. Repo Settings > Secrets and variables > Actions > New secret: NPM_TOKEN
+#      (npm granular access token, permission "Read and write" hanya untuk
+#      package @kelvdra/libsignal, aktifkan bypass 2FA untuk automation).
+#   2. (Opsional, disarankan) Settings > Environments > "npm-production" >
+#      Required reviewers, supaya setiap publish perlu approve manual.
+#   3. Field "repository.url" di package.json harus mengarah ke repo GitHub
+#      ini, kalau tidak provenance akan gagal.
+#
+# Cara rilis:
+#   npm version 1.0.1-rc.1 --no-git-tag-version   # ubah package.json
+#   git commit -am "release: 1.0.1-rc.1" && git push
+#   git tag v1.0.1-rc.1 && git push origin v1.0.1-rc.1
+
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+# Satu rilis per tag, jangan dibatalkan di tengah jalan.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Validasi: tag, versi, lint, test. Tidak memakai secret apa pun.
+  # ---------------------------------------------------------------------------
+  verify:
+    name: Verify (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: true
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # perlu riwayat penuh untuk cek tag ada di branch utama
+          persist-credentials: false
+
+      - name: Setup Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Validate tag format and package.json version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          SEMVER='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'
+          if ! [[ "$TAG" =~ $SEMVER ]]; then
+            echo "::error::Tag '$TAG' bukan semver valid (contoh: v1.0.0 atau v1.0.0-rc.1)"
+            exit 1
+          fi
+
+          TAG_VERSION="${TAG#v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag ($TAG_VERSION) tidak sama dengan version di package.json ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "OK: $TAG -> $PKG_VERSION"
+
+      - name: Ensure tagged commit is on the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$DEFAULT_BRANCH"
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$DEFAULT_BRANCH"; then
+            echo "::error::Commit tag ini tidak ada di branch '$DEFAULT_BRANCH'. Rilis hanya boleh dari branch utama."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --ignore-scripts --no-audit --no-fund
+          else
+            echo "::warning::package-lock.json tidak ada, memakai npm install. Disarankan commit lockfile."
+            npm install --ignore-scripts --no-audit --no-fund
+          fi
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: |
+          if [ -d test ] && ls test/*.test.js >/dev/null 2>&1; then
+            npm test
+          else
+            echo "::warning::Folder test/ belum ada, test dilewati."
+          fi
+
+      - name: Check package contents
+        run: npm pack --dry-run
+
+  # ---------------------------------------------------------------------------
+  # 2. Publish: hanya jalan kalau semua verify lulus.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish to npm
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm-production
+    permissions:
+      contents: write # buat GitHub Release
+      id-token: write # npm provenance (OIDC)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Read package info
+        id: pkg
+        run: |
+          echo "name=$(node -p "require('./package.json').name")" >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if this version is already on npm
+        id: exists
+        env:
+          NAME: ${{ steps.pkg.outputs.name }}
+          VERSION: ${{ steps.pkg.outputs.version }}
+        run: |
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "::warning::$NAME@$VERSION sudah ada di npm, publish dilewati."
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # --tag latest dipasang eksplisit supaya versi rc pun jadi "latest".
+      - name: Publish (dist-tag latest)
+        if: steps.exists.outputs.published == 'false'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --tag latest --access public --provenance
+
+      - name: Show result
+        if: steps.exists.outputs.published == 'false'
+        env:
+          NAME: ${{ steps.pkg.outputs.name }}
+        run: npm view "$NAME" dist-tags --json
+
+      - name: Create GitHub Release
+        if: steps.exists.outputs.published == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.pkg.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG sudah ada, dilewati."
+            exit 0
+          fi
+          # Versi dengan "-" (rc, beta, dll) ditandai pre-release di GitHub.
+          if [[ "$VERSION" == *-* ]]; then
+            FLAGS="--prerelease"
+          else
+            FLAGS="--latest"
+          fi
+          gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag $FLAGS
